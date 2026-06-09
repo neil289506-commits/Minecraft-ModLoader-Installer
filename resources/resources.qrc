@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RCC>
+    <qresource prefix="/">
+        <!-- Icons for modloaders -->
+        <file>icons/vanilla.png</file>
+        <file>icons/fabric.png</file>
+        <file>icons/quilt.png</file>
+        <file>icons/forge.png</file>
+        <file>icons/neoforge.png</file>
+        <file>icons/optifine.png</file>
+
+        <!-- Fonts (optional) -->
+        <!-- <file>fonts/JetBrainsMono-Regular.ttf</file> -->
+    </qresource>
+</RCC>

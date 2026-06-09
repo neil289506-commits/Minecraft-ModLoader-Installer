@@ -1,0 +1,10 @@
+^C:\USERS\JEX\DESKTOP\MCINSTALLER\SRC\CMAKEFILES\E28B74DB9328E2922DEDE1D04E3DCA46\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/Users/JEX/Desktop/MCInstaller -BC:/Users/JEX/Desktop/MCInstaller/src --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/Users/JEX/Desktop/MCInstaller/src/MCModloaderInstaller.slnx
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
