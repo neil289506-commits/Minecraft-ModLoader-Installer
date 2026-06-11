@@ -4,12 +4,10 @@
 #include <QJsonObject>
 #include <QFile>
 #include <QXmlStreamReader>
-#include <QStandardPaths>
 #include <QCoreApplication>
 #include <QDebug>
-
 #ifdef Q_OS_WIN
-    #include <windows.h>
+#  include <windows.h>
 #endif
 
 VersionFetcher::VersionFetcher(QObject *parent) : QObject(parent) {}
@@ -18,38 +16,29 @@ void VersionFetcher::fetchAll()
 {
     if (m_fetching) return;
 
-    // Locate or generate python script
     QString scriptPath = QCoreApplication::applicationDirPath() + "/requestVer.py";
-    if (!QFile::exists(scriptPath)) {
+    if (!QFile::exists(scriptPath))
         scriptPath = QDir::currentPath() + "/requestVer.py";
-        if (!QFile::exists(scriptPath)) {
-            // Auto-generate the script
-            generatePythonScript(scriptPath);
-        }
+    if (!QFile::exists(scriptPath)) {
+        generatePythonScript(scriptPath);
     }
     if (!QFile::exists(scriptPath)) {
-        emit fetchError("Failed to create requestVer.py");
+        emit fetchError("requestVer.py not found and could not be created.");
         return;
     }
 
     m_versionDir = QCoreApplication::applicationDirPath() + "/version";
-    if (m_versionDir == QDir::currentPath() + "/version") {
-        m_versionDir = QDir::currentPath() + "/version";
-    }
     m_fetching = true;
 
     m_process = new QProcess(this);
     m_process->setWorkingDirectory(QCoreApplication::applicationDirPath());
     m_process->setProcessChannelMode(QProcess::MergedChannels);
 
-    // Hide console window on Windows (more aggressive)
 #ifdef Q_OS_WIN
     m_process->setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments *args) {
-        // CREATE_NO_WINDOW = 0x08000000
-        // STARTF_USESHOWWINDOW = 0x01
-        args->flags |= 0x08000000;  // CREATE_NO_WINDOW
-        args->startupInfo->dwFlags |= 0x01;  // STARTF_USESHOWWINDOW
-        args->startupInfo->wShowWindow = 0;  // SW_HIDE
+        args->flags |= 0x08000000;
+        args->startupInfo->dwFlags |= 0x01;
+        args->startupInfo->wShowWindow = 0;
     });
 #endif
 
@@ -58,7 +47,7 @@ void VersionFetcher::fetchAll()
     connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, &VersionFetcher::onProcessFinished);
 
-    emit fetchProgress("Starting version fetch via Python...");
+    emit fetchProgress("Starting version fetch...");
 
 #ifdef Q_OS_WIN
     m_process->start("python", {scriptPath});
@@ -81,8 +70,7 @@ void VersionFetcher::parseLocal(const QString &versionDir)
 void VersionFetcher::onProcessOutput()
 {
     QString out = QString::fromUtf8(m_process->readAllStandardOutput()).trimmed();
-    if (!out.isEmpty())
-        emit fetchProgress(out);
+    if (!out.isEmpty()) emit fetchProgress(out);
 }
 
 void VersionFetcher::onProcessFinished(int exitCode, QProcess::ExitStatus status)
@@ -100,62 +88,129 @@ void VersionFetcher::onProcessFinished(int exitCode, QProcess::ExitStatus status
     parseLocal(m_versionDir);
 }
 
-// ──────────────────────────── Parsers ─────────────────────────────────────
+// ─────────────────────────────────── Parsers ──────────────────────────────
+
+// Split version string into numeric components for comparison
+// e.g. "1.20.4" → [1, 20, 4],  "0.16.0" → [0, 16, 0]
+// Non-numeric suffix in a component is ignored: "2beta" → 2
+static QVector<int> semVec(const QString &ver)
+{
+    QVector<int> v;
+    for (const QString &part : ver.split('.')) {
+        QString num;
+        for (QChar c : part) {
+            if (c.isDigit()) num += c;
+            else break;
+        }
+        v.append(num.isEmpty() ? 0 : num.toInt());
+    }
+    return v;
+}
+
+// Returns true when a is semantically newer than b  (sorts descending)
+static bool semGt(const QString &a, const QString &b)
+{
+    auto va = semVec(a);
+    auto vb = semVec(b);
+    int n = qMax(va.size(), vb.size());
+    for (int i = 0; i < n; ++i) {
+        int ai = i < va.size() ? va[i] : 0;
+        int bi = i < vb.size() ? vb[i] : 0;
+        if (ai != bi) return ai > bi;
+    }
+    return false;
+}
+
+// Compare ModloaderVersion: by mcVersion desc, then loaderVersion desc
+static bool mvGt(const ModloaderVersion &a, const ModloaderVersion &b)
+{
+    if (a.mcVersion != b.mcVersion) return semGt(a.mcVersion, b.mcVersion);
+    return semGt(a.loaderVersion, b.loaderVersion);
+}
 
 void VersionFetcher::parseVanilla(const QString &dir)
 {
     QFile f(dir + "/MojangData.json");
     if (!f.open(QIODevice::ReadOnly)) return;
 
-    QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
-    QJsonArray arr = doc.object()["versions"].toArray();
-
+    QJsonArray arr = QJsonDocument::fromJson(f.readAll()).object()["versions"].toArray();
     QList<ModloaderVersion> list;
     for (const QJsonValue &v : arr) {
         QJsonObject o = v.toObject();
         QString type = o["type"].toString();
-        // Only release and snapshot
         if (type != "release" && type != "snapshot") continue;
-
         ModloaderVersion mv;
-        mv.mcVersion    = o["id"].toString();
+        mv.mcVersion     = o["id"].toString();
         mv.loaderVersion = "";
-        mv.displayName  = mv.mcVersion + (type == "snapshot" ? " (snapshot)" : "");
-        mv.isStable     = (type == "release");
+        mv.displayName   = mv.mcVersion + (type == "snapshot" ? " (snapshot)" : "");
+        mv.isStable      = (type == "release");
         list.append(mv);
     }
+    // Mojang API already returns newest-first, but sort explicitly to be safe
+    std::sort(list.begin(), list.end(), [](const ModloaderVersion &a, const ModloaderVersion &b) {
+        return semGt(a.mcVersion, b.mcVersion);
+    });
     emit versionsReady(ModloaderType::Vanilla, list);
 }
 
 void VersionFetcher::parseFabric(const QString &dir)
 {
-    QFile f(dir + "/FabricMeta.json");
-    if (!f.open(QIODevice::ReadOnly)) return;
+    // --- Game versions ---
+    QFile gf(dir + "/FabricGame.json");
+    if (gf.open(QIODevice::ReadOnly)) {
+        QJsonArray arr = QJsonDocument::fromJson(gf.readAll()).array();
+        QStringList mcVersions;
+        for (const QJsonValue &v : arr) {
+            QString ver = v.toObject()["version"].toString();
+            if (!ver.isEmpty()) mcVersions << ver;
+        }
+        std::sort(mcVersions.begin(), mcVersions.end(),
+                  [](const QString &a, const QString &b) { return semGt(a, b); });
+        emit gameVersionsReady(ModloaderType::Fabric, mcVersions);
+    }
 
-    QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
-    QJsonArray arr = doc.array();
+    // --- Loader versions ---
+    QFile lf(dir + "/FabricLoader.json");
+    if (!lf.open(QIODevice::ReadOnly)) return;
 
+    QJsonArray arr = QJsonDocument::fromJson(lf.readAll()).array();
     QList<ModloaderVersion> list;
     for (const QJsonValue &v : arr) {
         QJsonObject o = v.toObject();
         ModloaderVersion mv;
         mv.loaderVersion = o["version"].toString();
-        mv.mcVersion     = "";   // Fabric loader works across MC versions
+        mv.mcVersion     = "";
         mv.displayName   = mv.loaderVersion;
         mv.isStable      = o["stable"].toBool();
         list.append(mv);
     }
+    std::sort(list.begin(), list.end(), [](const ModloaderVersion &a, const ModloaderVersion &b) {
+        return semGt(a.loaderVersion, b.loaderVersion);
+    });
     emit versionsReady(ModloaderType::Fabric, list);
 }
 
 void VersionFetcher::parseQuilt(const QString &dir)
 {
-    QFile f(dir + "/QuiltMeta.json");
-    if (!f.open(QIODevice::ReadOnly)) return;
+    // --- Game versions ---
+    QFile gf(dir + "/QuiltGame.json");
+    if (gf.open(QIODevice::ReadOnly)) {
+        QJsonArray arr = QJsonDocument::fromJson(gf.readAll()).array();
+        QStringList mcVersions;
+        for (const QJsonValue &v : arr) {
+            QString ver = v.toObject()["version"].toString();
+            if (!ver.isEmpty()) mcVersions << ver;
+        }
+        std::sort(mcVersions.begin(), mcVersions.end(),
+                  [](const QString &a, const QString &b) { return semGt(a, b); });
+        emit gameVersionsReady(ModloaderType::Quilt, mcVersions);
+    }
 
-    QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
-    QJsonArray arr = doc.array();
+    // --- Loader versions ---
+    QFile lf(dir + "/QuiltLoader.json");
+    if (!lf.open(QIODevice::ReadOnly)) return;
 
+    QJsonArray arr = QJsonDocument::fromJson(lf.readAll()).array();
     QList<ModloaderVersion> list;
     for (const QJsonValue &v : arr) {
         QJsonObject o = v.toObject();
@@ -167,19 +222,19 @@ void VersionFetcher::parseQuilt(const QString &dir)
                             !mv.loaderVersion.contains("alpha");
         list.append(mv);
     }
+    std::sort(list.begin(), list.end(), [](const ModloaderVersion &a, const ModloaderVersion &b) {
+        return semGt(a.loaderVersion, b.loaderVersion);
+    });
     emit versionsReady(ModloaderType::Quilt, list);
 }
 
-// Helper: parse <version> tags from Maven metadata XML
 static QStringList parseMavenVersions(const QString &path)
 {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) return {};
-
     QXmlStreamReader xml(&f);
     QStringList versions;
     bool inVersioning = false;
-
     while (!xml.atEnd()) {
         xml.readNext();
         if (xml.isStartElement()) {
@@ -195,38 +250,71 @@ static QStringList parseMavenVersions(const QString &path)
 
 void VersionFetcher::parseForge(const QString &dir)
 {
-    // Promotion: recommended/latest per MC version
+    // Parse both "latest" and "recommended" tags per MC version
     QFile pf(dir + "/ForgePromotion.json");
-    QMap<QString, QString> recommended;
+    QMap<QString, QString> latestMap;       // mcVer → loader version
+    QMap<QString, QString> recommendedMap;  // mcVer → loader version
+
     if (pf.open(QIODevice::ReadOnly)) {
         QJsonObject promos = QJsonDocument::fromJson(pf.readAll())
                                  .object()["promos"].toObject();
         for (auto it = promos.begin(); it != promos.end(); ++it) {
-            if (it.key().endsWith("-recommended"))
-                recommended[it.key().chopped(13)] = it.value().toString();
+            QString key = it.key();
+            int dash = key.lastIndexOf('-');
+            if (dash <= 0) continue;
+
+            QString mcVersion = key.left(dash);
+            QString label = key.mid(dash + 1);
+            if (label == "latest")
+                latestMap[mcVersion] = it.value().toString();
+            else if (label == "recommended")
+                recommendedMap[mcVersion] = it.value().toString();
         }
     }
 
     QStringList raw = parseMavenVersions(dir + "/ForgeMaven.xml");
     QList<ModloaderVersion> list;
-
     for (const QString &ver : raw) {
-        // Format: <mc>-<forge>
         int dash = ver.indexOf('-');
         if (dash < 0) continue;
-        QString mc    = ver.left(dash);
-        QString forge = ver.mid(dash + 1);
 
         ModloaderVersion mv;
-        mv.mcVersion    = mc;
-        mv.loaderVersion = forge;
-        mv.displayName  = ver;
-        mv.isStable     = recommended.value(mc) == forge;
+        mv.mcVersion     = ver.left(dash);
+        mv.loaderVersion = ver.mid(dash + 1);
+
+        bool isLatest = (latestMap.value(mv.mcVersion) == mv.loaderVersion);
+        bool isRec    = (recommendedMap.value(mv.mcVersion) == mv.loaderVersion);
+
+        mv.isStable = isLatest || isRec;
+        mv.displayName = mv.loaderVersion;
+        if (isLatest)
+            mv.displayName += "  [Latest]";
+        else if (isRec)
+            mv.displayName += "  ★";
+
         list.append(mv);
     }
 
-    // Newest first
-    std::reverse(list.begin(), list.end());
+    // Sort: MC version descending, then within same MC version:
+    //   latest promotions first, recommended second, then other loader versions descending.
+    std::sort(list.begin(), list.end(),
+        [&](const ModloaderVersion &a, const ModloaderVersion &b)
+    {
+        if (a.mcVersion != b.mcVersion)
+            return semGt(a.mcVersion, b.mcVersion);
+
+        auto comparePriority = [&](const ModloaderVersion &v) {
+            if (latestMap.value(v.mcVersion) == v.loaderVersion) return 2;
+            if (recommendedMap.value(v.mcVersion) == v.loaderVersion) return 1;
+            return 0;
+        };
+
+        int aPrio = comparePriority(a);
+        int bPrio = comparePriority(b);
+        if (aPrio != bPrio) return aPrio > bPrio;
+        return semGt(a.loaderVersion, b.loaderVersion);
+    });
+
     emit versionsReady(ModloaderType::Forge, list);
 }
 
@@ -234,22 +322,17 @@ void VersionFetcher::parseNeoForge(const QString &dir)
 {
     QStringList raw = parseMavenVersions(dir + "/NeoForgeMaven.xml");
     QList<ModloaderVersion> list;
-
     for (const QString &ver : raw) {
         ModloaderVersion mv;
-        // NeoForge versions look like 21.1.x where first two segments = MC 1.21.1
         QStringList parts = ver.split('.');
-        if (parts.size() >= 2)
-            mv.mcVersion = "1." + parts[0] + "." + parts[1];
-        else
-            mv.mcVersion = ver;
+        mv.mcVersion     = parts.size() >= 2 ? "1." + parts[0] + "." + parts[1] : ver;
         mv.loaderVersion = ver;
         mv.displayName   = ver;
         mv.isStable      = !ver.contains("beta") && !ver.contains("alpha");
         list.append(mv);
     }
-
-    std::reverse(list.begin(), list.end());
+    // Sort: MC version desc, then full loader version desc
+    std::sort(list.begin(), list.end(), mvGt);
     emit versionsReady(ModloaderType::NeoForge, list);
 }
 
@@ -258,35 +341,29 @@ void VersionFetcher::parseOptiFine(const QString &dir)
     QFile f(dir + "/OptiFineVersion.json");
     if (!f.open(QIODevice::ReadOnly)) return;
 
-    QJsonObject root = QJsonDocument::fromJson(f.readAll()).object();
-    QJsonArray arr   = root["versions"].toArray();
-
+    QJsonArray arr = QJsonDocument::fromJson(f.readAll()).object()["versions"].toArray();
     QList<ModloaderVersion> list;
     for (const QJsonValue &v : arr) {
         QJsonObject o = v.toObject();
         ModloaderVersion mv;
-        mv.mcVersion    = o["minecraft"].toString();
+        mv.mcVersion     = o["minecraft"].toString();
         mv.loaderVersion = o["optifine"].toString();
-        mv.displayName  = mv.mcVersion + " - " + mv.loaderVersion;
-        mv.isStable     = !mv.loaderVersion.contains("pre");
+        mv.displayName   = mv.mcVersion + " - " + mv.loaderVersion;
+        mv.isStable      = !mv.loaderVersion.contains("pre");
         list.append(mv);
     }
+    // Sort: MC version desc, then OptiFine version desc
+    std::sort(list.begin(), list.end(), mvGt);
     emit versionsReady(ModloaderType::OptiFine, list);
 }
 
-// ─────────────────────────── Generate Python Script ─────────────────────────
+// ─────────────────────── Auto-generate Python script ──────────────────────
 
 void VersionFetcher::generatePythonScript(const QString &scriptPath)
 {
-    // Use custom delimiter to avoid syntax issues
     const QString script = R"SCRIPT(#!/usr/bin/env python3
-import os
-import sys
-import requests
-import re
-import json
+import os, sys, json, re, requests
 from datetime import datetime
-
 try:
     from datetime import UTC
 except ImportError:
@@ -298,28 +375,28 @@ os.makedirs(VERSION_DIR, exist_ok=True)
 
 def download(url, filename, name):
     try:
-        filepath = os.path.join(VERSION_DIR, filename)
         print("[{}] Downloading...".format(name), flush=True)
-        r = requests.get(url, stream=True, timeout=30)
+        r = requests.get(url, stream=True, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
         r.raise_for_status()
-        with open(filepath, "wb") as f:
+        with open(os.path.join(VERSION_DIR, filename), "wb") as f:
             for chunk in r.iter_content(chunk_size=8192):
                 if chunk:
                     f.write(chunk)
-        print("[{}] Complete".format(name), flush=True)
+        print("[{}] Done".format(name), flush=True)
         return True
     except Exception as e:
-        print("[{}] Error: {}".format(name, str(e)), flush=True)
+        print("[{}] Error: {}".format(name, e), flush=True)
         return False
 
 try:
     download("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json", "MojangData.json", "Vanilla")
-    download("https://meta.fabricmc.net/v2/versions/loader", "FabricMeta.json", "Fabric")
-    download("https://meta.quiltmc.org/v3/versions/loader", "QuiltMeta.json", "Quilt")
-    download("https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml", "ForgeMaven.xml", "Forge")
-    download("https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json", "ForgePromotion.json", "ForgePromo")
+    download("https://meta.fabricmc.net/v2/versions/game", "FabricGame.json", "Fabric Game")
+    download("https://meta.fabricmc.net/v2/versions/loader", "FabricLoader.json", "Fabric Loader")
+    download("https://meta.quiltmc.org/v3/versions/game", "QuiltGame.json", "Quilt Game")
+    download("https://meta.quiltmc.org/v3/versions/loader", "QuiltLoader.json", "Quilt Loader")
+    download("https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml", "ForgeMaven.xml", "Forge Maven")
+    download("https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json", "ForgePromotion.json", "Forge Promos")
     download("https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml", "NeoForgeMaven.xml", "NeoForge")
-    
     try:
         print("[OptiFine] Downloading...", flush=True)
         r = requests.get("https://optifine.net/downloads", headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
@@ -330,31 +407,28 @@ try:
             parts = version.split("_")
             if len(parts) < 2:
                 continue
-            versions.append({"minecraft": parts[0], "optifine": "_".join(parts[1:]), "file": filename, "mirror": "https://optifine.net/adloadx?f=" + filename})
+            versions.append({"minecraft": parts[0], "optifine": "_".join(parts[1:]), "file": filename, "adloadx": "https://optifine.net/adloadx?f=" + filename})
         data = {"generated": datetime.now(UTC).isoformat(), "count": len(versions), "versions": versions}
         with open(os.path.join(VERSION_DIR, "OptiFineVersion.json"), "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
-        print("[OptiFine] Complete", flush=True)
+        print("[OptiFine] Done ({} versions)".format(len(versions)), flush=True)
     except Exception as e:
-        print("[OptiFine] Error: {}".format(str(e)), flush=True)
+        print("[OptiFine] Error: {}".format(e), flush=True)
         with open(os.path.join(VERSION_DIR, "OptiFineVersion.json"), "w") as f:
             json.dump({"versions": []}, f)
-    
-    print("\nAll version data downloaded", flush=True)
+    print("\n[Complete] All version data downloaded", flush=True)
     sys.exit(0)
 except Exception as e:
-    print("Fatal Error: {}".format(str(e)), flush=True)
+    print("[Fatal] {}".format(e), flush=True)
     sys.exit(1)
 )SCRIPT";
 
     QFile f(scriptPath);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        emit fetchError("Cannot create requestVer.py at: " + scriptPath);
+        emit fetchError("Cannot create requestVer.py: " + scriptPath);
         return;
     }
-
     f.write(script.toUtf8());
     f.close();
-
     emit fetchProgress("Auto-generated requestVer.py");
 }

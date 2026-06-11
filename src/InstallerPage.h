@@ -7,13 +7,11 @@
 #include <QRadioButton>
 #include <QCheckBox>
 #include <QGroupBox>
+#include <QMap>
 #include <QList>
+#include <QStringList>
 #include "ModloaderInfo.h"
 
-/**
- * The main right-hand content area.
- * Shows version selectors, install target options, and install button.
- */
 class InstallerPage : public QWidget
 {
     Q_OBJECT
@@ -21,7 +19,12 @@ public:
     explicit InstallerPage(QWidget *parent = nullptr);
 
     void setLoader(ModloaderType type);
+
+    // Loader versions (mcVersion may be empty for Fabric/Quilt)
     void setVersions(ModloaderType type, const QList<ModloaderVersion> &versions);
+
+    // Minecraft game versions for Fabric/Quilt (independent of loader version)
+    void setGameVersions(ModloaderType type, const QStringList &mcVersions);
 
     InstallConfig buildConfig() const;
 
@@ -35,27 +38,29 @@ private slots:
     void onMcVersionChanged(int index);
 
 private:
-    void rebuildLoaderVersions();
+    void rebuildVersionCombos();
     void updateTargetOptions();
     void applyLoaderTheme();
 
     ModloaderType m_currentType = ModloaderType::Fabric;
 
-    // Version data per loader
+    // Loader versions per loader (mcVersion empty for Fabric/Quilt)
     QMap<ModloaderType, QList<ModloaderVersion>> m_versionData;
 
+    // Separate game version lists for Fabric & Quilt
+    QMap<ModloaderType, QStringList> m_gameVersions;
+
     // Header
-    QLabel       *m_iconLabel;
     QLabel       *m_titleLabel;
     QLabel       *m_descLabel;
     QLabel       *m_badgeClient;
     QLabel       *m_badgeServer;
 
     // Version selectors
-    QComboBox    *m_mcVersionCombo;    // Minecraft version
     QLabel       *m_mcVersionLabel;
-    QComboBox    *m_loaderVersionCombo; // Loader version
+    QComboBox    *m_mcVersionCombo;
     QLabel       *m_loaderVersionLabel;
+    QComboBox    *m_loaderVersionCombo;
 
     // Install target
     QGroupBox    *m_targetGroup;
@@ -64,17 +69,14 @@ private:
     QRadioButton *m_radioBoth;
 
     // Options
-    QCheckBox    *m_profileCheck;   // Create launcher profile (client)
+    QCheckBox    *m_profileCheck;
     QLineEdit    *m_dirEdit;
     QPushButton  *m_browseBtn;
-
-    // Java path
     QLineEdit    *m_javaEdit;
 
     // Buttons
     QPushButton  *m_fetchBtn;
     QPushButton  *m_installBtn;
 
-    // Status
     QLabel       *m_statusLabel;
 };

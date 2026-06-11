@@ -1,10 +1,10 @@
 #pragma once
 #include <QMainWindow>
-#include <QStackedWidget>
 #include "SidebarWidget.h"
 #include "InstallerPage.h"
 #include "VersionFetcher.h"
 #include "InstallerWorker.h"
+#include "ProgressDialog.h"
 #include "ModloaderInfo.h"
 
 class MainWindow : public QMainWindow
@@ -22,15 +22,20 @@ private slots:
     void onFetchFinished();
     void onFetchError(const QString &err);
     void onVersionsReady(ModloaderType type, const QList<ModloaderVersion> &versions);
+    void onGameVersionsReady(ModloaderType type, const QStringList &mcVersions);
     void onInstallProgress(const QString &msg);
     void onInstallPercent(int pct);
+    void onInstallStage(int current, int total);
     void onInstallFinished(bool success, const QString &msg);
 
 private:
-    SidebarWidget  *m_sidebar;
-    InstallerPage  *m_page;
-    VersionFetcher *m_fetcher;
-    InstallerWorker*m_worker;
+    SidebarWidget   *m_sidebar;
+    InstallerPage   *m_page;
+    VersionFetcher  *m_fetcher;
+    InstallerWorker *m_worker;
+    ProgressDialog  *m_progressDlg = nullptr;
 
-    class ProgressDialog *m_progressDlg = nullptr;
+    // Cached nogui preference
+    bool m_noguiDecided = false;
+    bool m_cachedNogui  = true;
 };

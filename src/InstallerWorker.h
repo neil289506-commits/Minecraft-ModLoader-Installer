@@ -6,18 +6,6 @@
 #include <QFile>
 #include "ModloaderInfo.h"
 
-/**
- * Performs the actual installation in a background-friendly way.
- * Emits signals for progress and result.
- *
- * Strategy per loader:
- *  Vanilla  (server)   – download server jar from Mojang manifest
- *  Fabric   (both)     – run Fabric installer jar via Java
- *  Quilt    (both)     – run Quilt installer jar via Java
- *  Forge    (both)     – run Forge installer jar via Java
- *  NeoForge (both)     – run NeoForge installer jar via Java
- *  OptiFine (client)   – download OptiFine jar; optionally patch client
- */
 class InstallerWorker : public QObject
 {
     Q_OBJECT
@@ -30,7 +18,8 @@ public:
 
 signals:
     void progressMessage(const QString &msg);
-    void progressPercent(int percent);   // 0-100, -1 = indeterminate
+    void progressPercent(int percent);          // 0-100, -1 = indeterminate (stage bar)
+    void progressStage(int current, int total); // overall bar
     void installFinished(bool success, const QString &message);
 
 private slots:
@@ -40,11 +29,9 @@ private slots:
     void onProcessFinished(int exitCode, QProcess::ExitStatus status);
 
 private:
-    // Download helpers
     void startDownload(const QUrl &url, const QString &destPath,
                        std::function<void()> onSuccess);
 
-    // Loader-specific install steps
     void installVanillaServer();
     void installFabric();
     void installQuilt();
@@ -52,20 +39,27 @@ private:
     void installNeoForge();
     void installOptiFine();
 
-    // Run an installer jar
     void runInstallerJar(const QString &jarPath, const QStringList &args,
                           std::function<void(bool)> onFinished);
 
-    // Resolve Vanilla server URL from cached manifest
+    // Create launcher_profiles.json so Forge/NeoForge don't complain
+    void ensureLauncherProfile(const QString &dir);
+    // Create start_server.bat/.sh with optional nogui (generic)
+    void createStartScript(const QString &dir, const QString &jarName, bool nogui);
+    // Forge-specific: handles < 1.18.1 (direct jar) vs >= 1.18.1 (wraps run.bat)
+    void createForgeStartScript(const QString &dir, const QString &mcVersion, bool nogui);
+
     QString resolveVanillaServerUrl() const;
 
+    void hideProcessWindow(QProcess *p);
+
     InstallConfig m_cfg;
-    QNetworkAccessManager *m_nam = nullptr;
-    QNetworkReply         *m_reply  = nullptr;
+    QNetworkAccessManager *m_nam     = nullptr;
+    QNetworkReply         *m_reply   = nullptr;
     QProcess              *m_process = nullptr;
     QFile                 *m_outFile = nullptr;
-    bool m_cancelled = false;
+    bool                   m_cancelled = false;
 
-    std::function<void()> m_downloadCallback;
+    std::function<void()>     m_downloadCallback;
     std::function<void(bool)> m_processCallback;
 };

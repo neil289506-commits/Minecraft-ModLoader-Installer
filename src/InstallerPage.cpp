@@ -8,128 +8,88 @@
 #include <QFrame>
 #include <QScrollArea>
 
+// ── Style helpers ─────────────────────────────────────────────────────────
+
 static QString badgeStyle(const QString &color) {
-    return QString(R"(
-        background: %1;
-        color: white;
-        border-radius: 3px;
-        padding: 2px 8px;
-        font-size: 10px;
-        font-family: monospace;
-        font-weight: 700;
-        letter-spacing: 1px;
-    )").arg(color);
+    return QString("background:%1;color:white;border-radius:3px;"
+                   "padding:2px 8px;font-size:10px;font-family:monospace;"
+                   "font-weight:700;letter-spacing:1px;").arg(color);
 }
-
 static QString labelStyle() {
-    return "color: #718096; font-size: 11px; font-family: monospace; "
-           "font-weight: 600; letter-spacing: 1px;";
+    return "color:#718096;font-size:11px;font-family:monospace;"
+           "font-weight:600;letter-spacing:1px;";
 }
-
 static QString comboStyle(const QString &accent) {
     return QString(R"(
-        QComboBox {
-            background: #161B22;
-            color: #E2E8F0;
-            border: 1px solid #2D3748;
-            border-radius: 6px;
-            padding: 8px 12px;
-            font-size: 13px;
-            font-family: 'JetBrains Mono', monospace;
-            min-height: 20px;
-        }
-        QComboBox:hover  { border-color: %1; }
-        QComboBox:focus  { border-color: %1; }
-        QComboBox::drop-down { border: none; width: 24px; }
-        QComboBox QAbstractItemView {
-            background: #1A2233;
-            color: #E2E8F0;
-            border: 1px solid #2D3748;
-            selection-background-color: %1;
-            selection-color: white;
-            outline: none;
-        }
+        QComboBox { background:#161B22; color:#E2E8F0; border:1px solid #2D3748;
+                    border-radius:6px; padding:8px 12px; font-size:13px;
+                    font-family:'JetBrains Mono',monospace; min-height:20px; }
+        QComboBox:hover  { border-color:%1; }
+        QComboBox:focus  { border-color:%1; }
+        QComboBox::drop-down { border:none; width:24px; }
+        QComboBox QAbstractItemView { background:#1A2233; color:#E2E8F0;
+            border:1px solid #2D3748; selection-background-color:%1;
+            selection-color:white; outline:none; }
     )").arg(accent);
 }
-
 static QString lineEditStyle(const QString &accent) {
     return QString(R"(
-        QLineEdit {
-            background: #161B22;
-            color: #E2E8F0;
-            border: 1px solid #2D3748;
-            border-radius: 6px;
-            padding: 8px 12px;
-            font-size: 12px;
-            font-family: monospace;
-            min-height: 20px;
-        }
-        QLineEdit:hover { border-color: %1; }
-        QLineEdit:focus { border-color: %1; }
+        QLineEdit { background:#161B22; color:#E2E8F0; border:1px solid #2D3748;
+                    border-radius:6px; padding:8px 12px; font-size:12px;
+                    font-family:monospace; min-height:20px; }
+        QLineEdit:hover { border-color:%1; }
+        QLineEdit:focus { border-color:%1; }
     )").arg(accent);
 }
-
 static QString btnPrimary(const QString &color) {
     return QString(R"(
-        QPushButton {
-            background: %1;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            padding: 12px 32px;
-            font-size: 14px;
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 700;
-            letter-spacing: 1px;
-            min-height: 24px;
-        }
-        QPushButton:hover   { background: %2; }
-        QPushButton:pressed { background: %3; }
-        QPushButton:disabled { background: #2D3748; color: #4A5568; }
+        QPushButton { background:%1; color:white; border:none; border-radius:8px;
+                      padding:12px 32px; font-size:14px;
+                      font-family:'JetBrains Mono',monospace; font-weight:700;
+                      letter-spacing:1px; min-height:24px; }
+        QPushButton:hover   { background:%2; }
+        QPushButton:pressed { background:%3; }
+        QPushButton:disabled{ background:#2D3748; color:#4A5568; }
     )").arg(color)
        .arg(QColor(color).lighter(115).name())
        .arg(QColor(color).darker(115).name());
 }
-
 static QString radioStyle(const QString &accent) {
     return QString(R"(
-        QRadioButton {
-            color: #CBD5E0;
-            font-size: 13px;
-            font-family: 'JetBrains Mono', monospace;
-            spacing: 8px;
-        }
-        QRadioButton::indicator {
-            width: 16px; height: 16px;
-            border-radius: 8px;
-            border: 2px solid #4A5568;
-            background: transparent;
-        }
-        QRadioButton::indicator:checked {
-            border-color: %1;
-            background: %1;
-        }
-        QRadioButton:hover { color: white; }
+        QRadioButton { color:#CBD5E0; font-size:13px;
+                       font-family:'JetBrains Mono',monospace; spacing:8px; }
+        QRadioButton::indicator { width:16px; height:16px; border-radius:8px;
+                                  border:2px solid #4A5568; background:transparent; }
+        QRadioButton::indicator:checked { border-color:%1; background:%1; }
+        QRadioButton:hover { color:white; }
     )").arg(accent);
 }
+static QString groupStyle() {
+    return R"(
+        QGroupBox { color:#718096; font-size:11px; font-family:monospace;
+                    font-weight:700; letter-spacing:1px; border:1px solid #1E2D3D;
+                    border-radius:10px; margin-top:8px; background:#161B22; }
+        QGroupBox::title { subcontrol-origin:margin; left:16px; padding:0 6px; }
+    )";
+}
 
-// ──────────────────────────────────────────────────────────────────────────
+// ── Constructor ────────────────────────────────────────────────────────────
 
 InstallerPage::InstallerPage(QWidget *parent) : QWidget(parent)
 {
-    setStyleSheet("background: #0F1419;");
+    setStyleSheet("background:#0F1419;");
 
     auto *scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setStyleSheet("background: transparent;");
+    scroll->setStyleSheet("background:transparent;");
 
     auto *content = new QWidget;
-    content->setStyleSheet("background: transparent;");
+    content->setStyleSheet("background:transparent;");
 
-    auto *outerLayout = new QVBoxLayout(this);
-    outerLayout->setContentsMargins(0,0,0,0);
-    outerLayout->addWidget(scroll);
+    auto *outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0,0,0,0);
+    outer->addWidget(scroll);
     scroll->setWidget(content);
 
     auto *layout = new QVBoxLayout(content);
@@ -138,34 +98,18 @@ InstallerPage::InstallerPage(QWidget *parent) : QWidget(parent)
 
     // ── Header ────────────────────────────────────────────
     auto *headerWidget = new QWidget;
-    headerWidget->setStyleSheet(R"(
-        background: #161B22;
-        border-radius: 12px;
-        border: 1px solid #1E2D3D;
-    )");
+    headerWidget->setStyleSheet("background:#161B22; border-radius:12px; border:1px solid #1E2D3D;");
     auto *headerLayout = new QVBoxLayout(headerWidget);
     headerLayout->setContentsMargins(28, 24, 28, 24);
     headerLayout->setSpacing(8);
 
     m_titleLabel = new QLabel("Vanilla", headerWidget);
-    m_titleLabel->setStyleSheet(R"(
-        color: white;
-        font-size: 26px;
-        font-family: 'JetBrains Mono', monospace;
-        font-weight: 700;
-        letter-spacing: 2px;
-        background: transparent;
-        border: none;
-    )");
+    m_titleLabel->setStyleSheet("color:white; font-size:26px; font-family:'JetBrains Mono',monospace;"
+                                 "font-weight:700; letter-spacing:2px; background:transparent; border:none;");
 
     m_descLabel = new QLabel("", headerWidget);
-    m_descLabel->setStyleSheet(R"(
-        color: #718096;
-        font-size: 13px;
-        font-family: sans-serif;
-        background: transparent;
-        border: none;
-    )");
+    m_descLabel->setStyleSheet("color:#718096; font-size:13px; font-family:sans-serif;"
+                                "background:transparent; border:none;");
     m_descLabel->setWordWrap(true);
 
     auto *badgeRow = new QHBoxLayout;
@@ -183,25 +127,7 @@ InstallerPage::InstallerPage(QWidget *parent) : QWidget(parent)
 
     // ── Version Selection ──────────────────────────────────
     auto *verGroup = new QGroupBox("Version");
-    verGroup->setStyleSheet(R"(
-        QGroupBox {
-            color: #718096;
-            font-size: 11px;
-            font-family: monospace;
-            font-weight: 700;
-            letter-spacing: 1px;
-            border: 1px solid #1E2D3D;
-            border-radius: 10px;
-            margin-top: 8px;
-            background: #161B22;
-        }
-        QGroupBox::title {
-            subcontrol-origin: margin;
-            left: 16px;
-            padding: 0 6px;
-        }
-    )");
-
+    verGroup->setStyleSheet(groupStyle());
     auto *verLayout = new QGridLayout(verGroup);
     verLayout->setContentsMargins(20, 20, 20, 20);
     verLayout->setHorizontalSpacing(20);
@@ -221,13 +147,11 @@ InstallerPage::InstallerPage(QWidget *parent) : QWidget(parent)
     verLayout->addWidget(m_mcVersionCombo,     1, 0);
     verLayout->addWidget(m_loaderVersionLabel, 0, 1);
     verLayout->addWidget(m_loaderVersionCombo, 1, 1);
-
     layout->addWidget(verGroup);
 
     // ── Install Target ─────────────────────────────────────
     m_targetGroup = new QGroupBox("Install Target");
-    m_targetGroup->setStyleSheet(verGroup->styleSheet());
-
+    m_targetGroup->setStyleSheet(groupStyle());
     auto *targetLayout = new QHBoxLayout(m_targetGroup);
     targetLayout->setContentsMargins(20, 20, 20, 20);
     targetLayout->setSpacing(32);
@@ -245,7 +169,7 @@ InstallerPage::InstallerPage(QWidget *parent) : QWidget(parent)
 
     // ── Options ────────────────────────────────────────────
     auto *optGroup = new QGroupBox("Options");
-    optGroup->setStyleSheet(verGroup->styleSheet());
+    optGroup->setStyleSheet(groupStyle());
     auto *optLayout = new QGridLayout(optGroup);
     optLayout->setContentsMargins(20, 20, 20, 20);
     optLayout->setSpacing(12);
@@ -255,10 +179,10 @@ InstallerPage::InstallerPage(QWidget *parent) : QWidget(parent)
 
     m_dirEdit = new QLineEdit(optGroup);
     m_dirEdit->setPlaceholderText("Select install directory...");
+
     QString defaultDir;
 #ifdef Q_OS_WIN
-    defaultDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
-                 + "/.minecraft";
+    defaultDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/.minecraft";
 #elif defined(Q_OS_MAC)
     defaultDir = QDir::homePath() + "/Library/Application Support/minecraft";
 #else
@@ -269,25 +193,18 @@ InstallerPage::InstallerPage(QWidget *parent) : QWidget(parent)
     m_browseBtn = new QPushButton("Browse", optGroup);
     m_browseBtn->setFixedWidth(90);
     m_browseBtn->setStyleSheet(R"(
-        QPushButton {
-            background: #1E2D3D;
-            color: #CBD5E0;
-            border: 1px solid #2D3748;
-            border-radius: 6px;
-            padding: 8px 16px;
-            font-size: 12px;
-            font-family: monospace;
-        }
-        QPushButton:hover { background: #263548; color: white; }
+        QPushButton { background:#1E2D3D; color:#CBD5E0; border:1px solid #2D3748;
+                      border-radius:6px; padding:8px 16px; font-size:12px; font-family:monospace; }
+        QPushButton:hover { background:#263548; color:white; }
     )");
 
     auto *javaLabel = new QLabel("JAVA EXECUTABLE  (blank = system java)", optGroup);
     javaLabel->setStyleSheet(labelStyle());
     m_javaEdit = new QLineEdit(optGroup);
-    m_javaEdit->setPlaceholderText("java  /usr/bin/java  C:\\...\\java.exe");
+    m_javaEdit->setPlaceholderText("java");
 
     m_profileCheck = new QCheckBox("Create Minecraft launcher profile (client)", optGroup);
-    m_profileCheck->setStyleSheet("color: #CBD5E0; font-size: 13px; font-family: monospace;");
+    m_profileCheck->setStyleSheet("color:#CBD5E0; font-size:13px; font-family:monospace;");
     m_profileCheck->setChecked(true);
 
     auto *dirRow = new QHBoxLayout;
@@ -300,7 +217,6 @@ InstallerPage::InstallerPage(QWidget *parent) : QWidget(parent)
     optLayout->addWidget(javaLabel,      2, 0);
     optLayout->addWidget(m_javaEdit,     3, 0);
     optLayout->addWidget(m_profileCheck, 4, 0);
-
     layout->addWidget(optGroup);
 
     // ── Buttons ────────────────────────────────────────────
@@ -309,19 +225,11 @@ InstallerPage::InstallerPage(QWidget *parent) : QWidget(parent)
 
     m_fetchBtn = new QPushButton("↻  Fetch Versions", content);
     m_fetchBtn->setStyleSheet(R"(
-        QPushButton {
-            background: #1E2D3D;
-            color: #63B3ED;
-            border: 1px solid #2C5282;
-            border-radius: 8px;
-            padding: 12px 24px;
-            font-size: 13px;
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 700;
-            letter-spacing: 1px;
-        }
-        QPushButton:hover { background: #2C3E50; color: #90CDF4; }
-        QPushButton:disabled { background: #1A2233; color: #2D3748; border-color: #1E2D3D; }
+        QPushButton { background:#1E2D3D; color:#63B3ED; border:1px solid #2C5282;
+                      border-radius:8px; padding:12px 24px; font-size:13px;
+                      font-family:'JetBrains Mono',monospace; font-weight:700; letter-spacing:1px; }
+        QPushButton:hover { background:#2C3E50; color:#90CDF4; }
+        QPushButton:disabled { background:#1A2233; color:#2D3748; border-color:#1E2D3D; }
     )");
 
     m_installBtn = new QPushButton("⬇  Install", content);
@@ -329,64 +237,155 @@ InstallerPage::InstallerPage(QWidget *parent) : QWidget(parent)
     btnRow->addWidget(m_fetchBtn);
     btnRow->addStretch();
     btnRow->addWidget(m_installBtn);
-
     layout->addLayout(btnRow);
 
-    // ── Status ──────────────────────────────────────────────
     m_statusLabel = new QLabel("", content);
-    m_statusLabel->setStyleSheet("color: #718096; font-size: 12px; font-family: monospace;");
+    m_statusLabel->setStyleSheet("color:#718096; font-size:12px; font-family:monospace;");
     m_statusLabel->setWordWrap(true);
     layout->addWidget(m_statusLabel);
 
     layout->addStretch();
 
-    // ── Connections ─────────────────────────────────────────
-    connect(m_browseBtn,  &QPushButton::clicked, this, &InstallerPage::onBrowseClicked);
-    connect(m_installBtn, &QPushButton::clicked, this, &InstallerPage::onInstallClicked);
-    connect(m_fetchBtn,   &QPushButton::clicked, this, &InstallerPage::fetchRequested);
+    // ── Connections ────────────────────────────────────────
+    connect(m_browseBtn,  &QPushButton::clicked,
+            this, &InstallerPage::onBrowseClicked);
+    connect(m_installBtn, &QPushButton::clicked,
+            this, &InstallerPage::onInstallClicked);
+    connect(m_fetchBtn,   &QPushButton::clicked,
+            this, &InstallerPage::fetchRequested);
     connect(m_mcVersionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &InstallerPage::onMcVersionChanged);
 
-    // Initial theme
     setLoader(ModloaderType::Vanilla);
 }
+
+// ── Public API ─────────────────────────────────────────────────────────────
 
 void InstallerPage::setLoader(ModloaderType type)
 {
     m_currentType = type;
     applyLoaderTheme();
     updateTargetOptions();
-    rebuildLoaderVersions();
+    rebuildVersionCombos();
 }
 
 void InstallerPage::setVersions(ModloaderType type, const QList<ModloaderVersion> &versions)
 {
     m_versionData[type] = versions;
     if (type == m_currentType)
-        rebuildLoaderVersions();
-
+        rebuildVersionCombos();
     m_statusLabel->setText(QString("✓ %1 versions loaded (%2 entries)")
-                               .arg(modloaderName(type))
-                               .arg(versions.size()));
+                               .arg(modloaderName(type)).arg(versions.size()));
 }
+
+void InstallerPage::setGameVersions(ModloaderType type, const QStringList &mcVersions)
+{
+    m_gameVersions[type] = mcVersions;
+    if (type == m_currentType)
+        rebuildVersionCombos();
+}
+
+// ── Private: rebuild combos ────────────────────────────────────────────────
+
+void InstallerPage::rebuildVersionCombos()
+{
+    m_mcVersionCombo->blockSignals(true);
+    m_mcVersionCombo->clear();
+    m_loaderVersionCombo->clear();
+
+    bool isFabricQuilt = (m_currentType == ModloaderType::Fabric ||
+                          m_currentType == ModloaderType::Quilt);
+    bool isVanilla     = (m_currentType == ModloaderType::Vanilla);
+
+    // MC version combo: always visible except Vanilla (where it IS the only version)
+    m_mcVersionLabel->setVisible(true);
+    m_mcVersionCombo->setVisible(true);
+    m_loaderVersionLabel->setVisible(!isVanilla);
+    m_loaderVersionCombo->setVisible(!isVanilla);
+
+    if (isFabricQuilt) {
+        // ── Fabric / Quilt: independent game + loader versions ─────────────
+        const QStringList &gameVers = m_gameVersions.value(m_currentType);
+        if (gameVers.isEmpty()) {
+            m_mcVersionCombo->addItem("– fetch versions first –");
+        } else {
+            m_mcVersionCombo->addItems(gameVers);
+        }
+
+        const QList<ModloaderVersion> &loaderVers = m_versionData.value(m_currentType);
+        if (loaderVers.isEmpty()) {
+            m_loaderVersionCombo->addItem("– fetch versions first –");
+        } else {
+            for (const auto &v : loaderVers) {
+                m_loaderVersionCombo->addItem(
+                    v.loaderVersion + (v.isStable ? "" : "  [unstable]"),
+                    v.loaderVersion);
+            }
+        }
+
+    } else {
+        // ── Other loaders: MC version → filters loader versions ────────────
+        const QList<ModloaderVersion> &vers = m_versionData.value(m_currentType);
+        if (vers.isEmpty()) {
+            m_mcVersionCombo->addItem("– fetch versions first –");
+            m_loaderVersionCombo->addItem("– fetch versions first –");
+            m_mcVersionCombo->blockSignals(false);
+            return;
+        }
+
+        QStringList mcVersions;
+        for (const auto &v : vers) {
+            if (!mcVersions.contains(v.mcVersion))
+                mcVersions << v.mcVersion;
+        }
+        m_mcVersionCombo->addItems(mcVersions);
+        onMcVersionChanged(0);
+    }
+
+    m_mcVersionCombo->blockSignals(false);
+}
+
+void InstallerPage::onMcVersionChanged(int index)
+{
+    if (index < 0) return;
+
+    bool isFabricQuilt = (m_currentType == ModloaderType::Fabric ||
+                          m_currentType == ModloaderType::Quilt);
+    if (isFabricQuilt) return;  // Fabric/Quilt loader versions are independent
+
+    QString mc = m_mcVersionCombo->currentText();
+    const QList<ModloaderVersion> &vers = m_versionData.value(m_currentType);
+
+    m_loaderVersionCombo->clear();
+
+    if (m_currentType == ModloaderType::Vanilla) {
+        // Vanilla: loader combo unused, just reflect MC version
+        return;
+    }
+
+    for (const auto &v : vers) {
+        if (v.mcVersion == mc) {
+            QString label = v.displayName + (v.isStable ? " ★" : "");
+            m_loaderVersionCombo->addItem(label, v.loaderVersion);
+        }
+    }
+}
+
+// ── Theme / layout helpers ─────────────────────────────────────────────────
 
 void InstallerPage::applyLoaderTheme()
 {
-    auto cap = capabilityOf(m_currentType);
+    auto    cap    = capabilityOf(m_currentType);
     QString accent = cap.color;
 
     m_titleLabel->setText(modloaderName(m_currentType));
     m_descLabel->setText(cap.description);
 
-    // Badges
-    QString clientStyle = cap.supportsClient ?
-        badgeStyle(accent) : "background:#1A2233;color:#4A5568;border-radius:3px;"
-                              "padding:2px 8px;font-size:10px;font-family:monospace;";
-    QString serverStyle = cap.supportsServer ?
-        badgeStyle(accent) : "background:#1A2233;color:#4A5568;border-radius:3px;"
-                              "padding:2px 8px;font-size:10px;font-family:monospace;";
-    m_badgeClient->setStyleSheet(clientStyle);
-    m_badgeServer->setStyleSheet(serverStyle);
+    QString active   = badgeStyle(accent);
+    QString inactive = "background:#1A2233;color:#4A5568;border-radius:3px;"
+                       "padding:2px 8px;font-size:10px;font-family:monospace;";
+    m_badgeClient->setStyleSheet(cap.supportsClient ? active : inactive);
+    m_badgeServer->setStyleSheet(cap.supportsServer ? active : inactive);
 
     m_mcVersionCombo->setStyleSheet(comboStyle(accent));
     m_loaderVersionCombo->setStyleSheet(comboStyle(accent));
@@ -407,7 +406,6 @@ void InstallerPage::updateTargetOptions()
     m_radioServer->setEnabled(cap.supportsServer);
     m_radioBoth->setEnabled(cap.supportsClient && cap.supportsServer);
 
-    // Auto-select sensible default
     if (!cap.supportsClient && cap.supportsServer)
         m_radioServer->setChecked(true);
     else if (cap.supportsClient && !cap.supportsServer)
@@ -415,152 +413,84 @@ void InstallerPage::updateTargetOptions()
     else
         m_radioClient->setChecked(true);
 
-    // Profile checkbox only relevant for client
     m_profileCheck->setVisible(cap.supportsClient);
 }
 
-void InstallerPage::rebuildLoaderVersions()
-{
-    const QList<ModloaderVersion> &vers = m_versionData.value(m_currentType);
-
-    // For loaders with both mc-version and loader-version dimensions,
-    // mc version combo lists unique MC versions; loader combo filters.
-    // For loaders where mcVersion is empty (Fabric, Quilt), mc combo hidden.
-
-    bool hasMcDim = (m_currentType == ModloaderType::Vanilla ||
-                     m_currentType == ModloaderType::Forge   ||
-                     m_currentType == ModloaderType::NeoForge||
-                     m_currentType == ModloaderType::OptiFine);
-
-    m_mcVersionLabel->setVisible(hasMcDim);
-    m_mcVersionCombo->setVisible(hasMcDim);
-
-    bool isVanilla = (m_currentType == ModloaderType::Vanilla);
-    m_loaderVersionLabel->setVisible(!isVanilla);
-    m_loaderVersionCombo->setVisible(!isVanilla);
-
-    m_mcVersionCombo->blockSignals(true);
-    m_mcVersionCombo->clear();
-    m_loaderVersionCombo->clear();
-
-    if (vers.isEmpty()) {
-        m_mcVersionCombo->addItem("– fetch versions first –");
-        m_loaderVersionCombo->addItem("– fetch versions first –");
-        m_mcVersionCombo->blockSignals(false);
-        return;
-    }
-
-    if (hasMcDim) {
-        QStringList mcVersions;
-        for (const auto &v : vers) {
-            if (!mcVersions.contains(v.mcVersion))
-                mcVersions << v.mcVersion;
-        }
-        m_mcVersionCombo->addItems(mcVersions);
-    }
-
-    if (!hasMcDim) {
-        // Fabric/Quilt: just list loader versions
-        for (const auto &v : vers) {
-            m_loaderVersionCombo->addItem(
-                v.displayName + (v.isStable ? "" : "  [unstable]"),
-                v.loaderVersion);
-        }
-    } else {
-        onMcVersionChanged(0);
-    }
-
-    m_mcVersionCombo->blockSignals(false);
-}
-
-void InstallerPage::onMcVersionChanged(int index)
-{
-    if (index < 0) return;
-    QString mc = m_mcVersionCombo->currentText();
-    const QList<ModloaderVersion> &vers = m_versionData.value(m_currentType);
-
-    m_loaderVersionCombo->clear();
-
-    for (const auto &v : vers) {
-        if (v.mcVersion == mc) {
-            m_loaderVersionCombo->addItem(
-                v.displayName + (v.isStable ? " ★" : ""),
-                v.loaderVersion);
-        }
-    }
-
-    // For Vanilla: mc version IS the version
-    if (m_currentType == ModloaderType::Vanilla && m_loaderVersionCombo->count() == 0) {
-        // Pick the MC version entry directly
-        for (const auto &v : vers) {
-            if (v.mcVersion == mc)
-                m_loaderVersionCombo->addItem(v.displayName);
-        }
-    }
-}
+// ── Slots ──────────────────────────────────────────────────────────────────
 
 void InstallerPage::onBrowseClicked()
 {
     QString dir = QFileDialog::getExistingDirectory(
-        this, "Select Install Directory",
-        m_dirEdit->text(),
+        this, "Select Install Directory", m_dirEdit->text(),
         QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
-    if (!dir.isEmpty())
-        m_dirEdit->setText(dir);
+    if (!dir.isEmpty()) m_dirEdit->setText(dir);
 }
 
 void InstallerPage::onInstallClicked()
 {
-    InstallConfig cfg = buildConfig();
-
-    if (cfg.installDir.isEmpty()) {
-        QMessageBox::warning(this, "Missing Directory",
-                             "Please select an install directory.");
-        return;
-    }
-    if (m_versionData.value(m_currentType).isEmpty()) {
-        QMessageBox::warning(this, "No Versions",
-                             "Please fetch versions first.");
+    if (m_dirEdit->text().trimmed().isEmpty()) {
+        QMessageBox::warning(this, "Missing Directory", "Please select an install directory.");
         return;
     }
 
-    emit installRequested(cfg);
+    bool isFabricQuilt = (m_currentType == ModloaderType::Fabric ||
+                          m_currentType == ModloaderType::Quilt);
+    bool hasLoaderData = !m_versionData.value(m_currentType).isEmpty();
+    bool hasGameData   = isFabricQuilt
+                            ? !m_gameVersions.value(m_currentType).isEmpty()
+                            : true;
+
+    if (!hasLoaderData || !hasGameData) {
+        QMessageBox::warning(this, "No Versions", "Please fetch versions first.");
+        return;
+    }
+
+    emit installRequested(buildConfig());
 }
 
 InstallConfig InstallerPage::buildConfig() const
 {
     InstallConfig cfg;
-    cfg.type       = m_currentType;
-    cfg.installDir = m_dirEdit->text();
-    cfg.javaPath   = m_javaEdit->text().trimmed();
+    cfg.type          = m_currentType;
+    cfg.installDir    = m_dirEdit->text().trimmed();
+    cfg.javaPath      = m_javaEdit->text().trimmed();
     cfg.createProfile = m_profileCheck->isChecked();
 
-    // Target
-    if (m_radioServer->isChecked())
-        cfg.target = InstallTarget::Server;
-    else if (m_radioBoth->isChecked())
-        cfg.target = InstallTarget::Both;
-    else
-        cfg.target = InstallTarget::Client;
+    if (m_radioServer->isChecked())     cfg.target = InstallTarget::Server;
+    else if (m_radioBoth->isChecked())  cfg.target = InstallTarget::Both;
+    else                                cfg.target = InstallTarget::Client;
 
-    // Version
-    const QList<ModloaderVersion> &vers = m_versionData.value(m_currentType);
-    if (!vers.isEmpty()) {
-        QString mc     = m_mcVersionCombo->currentText();
-        QString loader = m_loaderVersionCombo->currentData().toString();
-        if (loader.isEmpty()) loader = m_loaderVersionCombo->currentText();
+    // Resolve version
+    QString mc     = m_mcVersionCombo->currentText();
+    QString loader = m_loaderVersionCombo->currentData().toString();
+    if (loader.isEmpty()) loader = m_loaderVersionCombo->currentText();
 
+    bool isFabricQuilt = (m_currentType == ModloaderType::Fabric ||
+                          m_currentType == ModloaderType::Quilt);
+
+    if (isFabricQuilt) {
+        // MC version comes from game versions list; loader from loader list
+        cfg.version.mcVersion    = mc;
+        cfg.version.loaderVersion = loader;
+        cfg.version.displayName  = mc + " + " + loader;
+        cfg.version.isStable     = true;
+    } else if (m_currentType == ModloaderType::Vanilla) {
+        cfg.version.mcVersion    = mc;
+        cfg.version.loaderVersion = "";
+        cfg.version.displayName  = mc;
+    } else {
+        // Forge / NeoForge / OptiFine: find matching entry
+        const QList<ModloaderVersion> &vers = m_versionData.value(m_currentType);
         for (const auto &v : vers) {
-            bool mcMatch  = v.mcVersion.isEmpty() || v.mcVersion == mc;
-            bool ldrMatch = v.loaderVersion.isEmpty() || v.loaderVersion == loader ||
-                            v.mcVersion == mc; // Vanilla
-            if (mcMatch && ldrMatch) {
+            if (v.mcVersion == mc &&
+                (v.loaderVersion == loader || loader.isEmpty()))
+            {
                 cfg.version = v;
                 break;
             }
         }
         // Fallback
-        if (cfg.version.mcVersion.isEmpty() && cfg.version.loaderVersion.isEmpty()) {
+        if (cfg.version.mcVersion.isEmpty()) {
             cfg.version.mcVersion    = mc;
             cfg.version.loaderVersion = loader;
         }

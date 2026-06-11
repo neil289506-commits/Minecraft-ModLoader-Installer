@@ -2,7 +2,22 @@
 #include <QPainter>
 #include <QVBoxLayout>
 #include <QLabel>
-#include <QIcon>
+#include <QPixmap>
+
+// ─────────────────────────── helpers ──────────────────────────────────────
+
+static QString iconResourcePath(ModloaderType t)
+{
+    switch (t) {
+    case ModloaderType::Vanilla:  return ":/icons/vanilla.png";
+    case ModloaderType::Fabric:   return ":/icons/fabric.png";
+    case ModloaderType::Quilt:    return ":/icons/quilt.png";
+    case ModloaderType::Forge:    return ":/icons/forge.png";
+    case ModloaderType::NeoForge: return ":/icons/neoforge.png";
+    case ModloaderType::OptiFine: return ":/icons/optifine.png";
+    }
+    return {};
+}
 
 // ─────────────────────────── SidebarButton ────────────────────────────────
 
@@ -10,28 +25,29 @@ SidebarButton::SidebarButton(ModloaderType type, QWidget *parent)
     : QPushButton(parent), m_type(type)
 {
     auto cap = capabilityOf(type);
-    setText(modloaderName(type));
+
     setCheckable(true);
     setCursor(Qt::PointingHandCursor);
     setFixedHeight(56);
 
-    // 加入圖示
-    QString iconPath;
-    switch (type) {
-        case ModloaderType::Vanilla:   iconPath = ":/icons/vanilla.png"; break;
-        case ModloaderType::Fabric:    iconPath = ":/icons/fabric.png"; break;
-        case ModloaderType::Quilt:     iconPath = ":/icons/quilt.png"; break;
-        case ModloaderType::Forge:     iconPath = ":/icons/forge.png"; break;
-        case ModloaderType::NeoForge:  iconPath = ":/icons/neoforge.png"; break;
-        case ModloaderType::OptiFine:  iconPath = ":/icons/optifine.png"; break;
+    // Icon
+    QPixmap px(iconResourcePath(type));
+    if (!px.isNull()) {
+        setIcon(QIcon(px));
+        setIconSize(QSize(22, 22));
+        setText(" " + modloaderName(type));   // small gap after icon
+    } else {
+        setText(modloaderName(type));
     }
-    setIcon(QIcon(iconPath));
-    setIconSize(QSize(20, 20)); // 調整圖示大小
 
-    QString style = QString(R"(
+    // Convert hex colour to rgb components for rgba() in stylesheet
+    QColor c(cap.color);
+    QString rgb = QString("%1,%2,%3").arg(c.red()).arg(c.green()).arg(c.blue());
+
+    setStyleSheet(QString(R"(
         QPushButton {
             text-align: left;
-            padding-left: 40px;   /* 留空間給圖示 */
+            padding-left: 14px;
             border: none;
             border-left: 3px solid transparent;
             background: transparent;
@@ -51,11 +67,7 @@ SidebarButton::SidebarButton(ModloaderType type, QWidget *parent)
             color: white;
             border-left: 3px solid %1;
         }
-    )").arg(cap.color)
-       .arg(QColor(cap.color).red())
-       + QString(", %1, %2").arg(QColor(cap.color).green()).arg(QColor(cap.color).blue());
-
-    setStyleSheet(style);
+    )").arg(cap.color, rgb));
 }
 
 void SidebarButton::setActive(bool active)

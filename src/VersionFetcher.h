@@ -2,33 +2,26 @@
 #include <QObject>
 #include <QProcess>
 #include <QDir>
-#include <QMap>
+#include <QStringList>
 #include "ModloaderInfo.h"
 
-/**
- * Runs requestVer.py in a subprocess and signals progress.
- * After completion, parses the downloaded JSON/XML files
- * and emits versionsFetched() per loader.
- */
 class VersionFetcher : public QObject
 {
     Q_OBJECT
 public:
     explicit VersionFetcher(QObject *parent = nullptr);
-
-    // Launch python script to download version data
     void fetchAll();
-
-    // Parse already-downloaded files (no network)
     void parseLocal(const QString &versionDir);
-
     bool isFetching() const { return m_fetching; }
 
 signals:
     void fetchProgress(const QString &message);
-    void fetchFinished();          // python exited OK
+    void fetchFinished();
     void fetchError(const QString &error);
+    // Loader versions (mcVersion may be empty for Fabric/Quilt)
     void versionsReady(ModloaderType type, const QList<ModloaderVersion> &versions);
+    // Minecraft game versions supported by a loader (Fabric/Quilt)
+    void gameVersionsReady(ModloaderType type, const QStringList &mcVersions);
 
 private slots:
     void onProcessOutput();
@@ -44,6 +37,6 @@ private:
     void parseOptiFine(const QString &dir);
 
     QProcess *m_process = nullptr;
-    bool m_fetching = false;
-    QString m_versionDir;
+    bool      m_fetching = false;
+    QString   m_versionDir;
 };
