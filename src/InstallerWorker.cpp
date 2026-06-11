@@ -1,0 +1,568 @@
+#include "InstallerWorker.h"
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QFile>
+#include <QDir>
+#include <QTextStream>
+#include <QCoreApplication>
+#include <QNetworkRequest>
+#include <QRegularExpression>
+#include <QDebug>
+#ifdef Q_OS_WIN
+#  include <windows.h>
+#endif
+
+InstallerWorker::InstallerWorker(QObject *parent)
+    : QObject(parent), m_nam(new QNetworkAccessManager(this)) {}
+
+InstallerWorker::~InstallerWorker() { cancel(); }
+
+void InstallerWorker::cancel()
+{
+    m_cancelled = true;
+    if (m_reply)   m_reply->abort();
+    if (m_process) m_process->kill();
+    if (m_outFile && m_outFile->isOpen()) m_outFile->close();
+}
+
+void InstallerWorker::install(const InstallConfig &cfg)
+{
+    m_cfg       = cfg;
+    m_cancelled = false;
+    QDir().mkpath(cfg.installDir);
+
+    switch (cfg.type) {
+    case ModloaderType::Vanilla:  installVanillaServer(); break;
+    case ModloaderType::Fabric:   installFabric();        break;
+    case ModloaderType::Quilt:    installQuilt();         break;
+    case ModloaderType::Forge:    installForge();         break;
+    case ModloaderType::NeoForge: installNeoForge();      break;
+    case ModloaderType::OptiFine: installOptiFine();      break;
+    }
+}
+
+// ──────────────────────────── Helpers ─────────────────────────────────────
+
+void InstallerWorker::hideProcessWindow(QProcess *p)
+{
+#ifdef Q_OS_WIN
+    p->setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments *args) {
+        args->flags |= 0x08000000;
+        args->startupInfo->dwFlags |= 0x01;
+        args->startupInfo->wShowWindow = 0;
+    });
+#else
+    Q_UNUSED(p)
+#endif
+}
+
+void InstallerWorker::ensureLauncherProfile(const QString &dir)
+{
+    QString path = dir + "/launcher_profiles.json";
+    if (!QFile::exists(path)) {
+        QFile f(path);
+        if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            // Use a plain string to avoid raw-string delimiter conflicts
+            f.write("{\"profiles\":{\"(Default)\":{\"name\":\"(Default)\",\"type\":\"latest-release\"}},"
+                    "\"selectedProfile\":\"(Default)\","
+                    "\"clientToken\":\"00000000-0000-0000-0000-000000000000\","
+                    "\"authenticationDatabase\":{},"
+                    "\"launcherVersion\":{\"format\":21}}");
+            f.close();
+            emit progressMessage("Created launcher_profiles.json");
+        }
+    }
+}
+
+void InstallerWorker::createStartScript(const QString &dir, const QString &jarName, bool nogui)
+{
+    QString noguiArg = nogui ? " nogui" : "";
+#ifdef Q_OS_WIN
+    QFile bat(dir + "/start_server.bat");
+    if (bat.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream s(&bat);
+        s << "@echo off\r\n";
+        s << "title Minecraft Server\r\n";
+        s << "cd /d \"" << dir << "\"\r\n";
+        s << "java -Xmx2G -Xms1G -jar \"" << jarName << "\"" << noguiArg << "\r\n";
+        s << "pause\r\n";
+        bat.close();
+        emit progressMessage("Created start_server.bat" + QString(nogui ? " (nogui)" : " (GUI)"));
+    }
+#else
+    QFile sh(dir + "/start_server.sh");
+    if (sh.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream s(&sh);
+        s << "#!/bin/bash\n";
+        s << "cd \"" << dir << "\"\n";
+        s << "java -Xmx2G -Xms1G -jar \"" << jarName << "\"" << noguiArg << "\n";
+        sh.close();
+        QFile::setPermissions(dir + "/start_server.sh",
+            QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner|
+            QFile::ReadGroup|QFile::ExeGroup|QFile::ReadOther|QFile::ExeOther);
+        emit progressMessage("Created start_server.sh" + QString(nogui ? " (nogui)" : " (GUI)"));
+    }
+#endif
+}
+
+void InstallerWorker::startDownload(const QUrl &url, const QString &destPath,
+                                     std::function<void()> onSuccess)
+{
+    m_downloadCallback = onSuccess;
+
+    if (m_outFile) delete m_outFile;
+    m_outFile = new QFile(destPath, this);
+    if (!m_outFile->open(QIODevice::WriteOnly)) {
+        emit installFinished(false, "Cannot open file for writing: " + destPath);
+        return;
+    }
+
+    emit progressMessage("Downloading: " + url.toString());
+
+    QNetworkRequest req(url);
+    req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                     QNetworkRequest::NoLessSafeRedirectPolicy);
+    m_reply = m_nam->get(req);
+
+    connect(m_reply, &QNetworkReply::downloadProgress,
+            this, &InstallerWorker::onDownloadProgress);
+    connect(m_reply, &QNetworkReply::readyRead, this, [this]() {
+        if (m_outFile) m_outFile->write(m_reply->readAll());
+    });
+    connect(m_reply, &QNetworkReply::finished,
+            this, &InstallerWorker::onDownloadFinished);
+}
+
+void InstallerWorker::onDownloadProgress(qint64 received, qint64 total)
+{
+    if (total > 0) {
+        int pct = static_cast<int>(received * 100 / total);
+        emit progressPercent(pct);
+        emit progressMessage(QString("Downloading... %1%").arg(pct));
+    } else {
+        emit progressPercent(-1);
+    }
+}
+
+void InstallerWorker::onDownloadFinished()
+{
+    if (m_outFile) { m_outFile->close(); }
+    if (m_cancelled) return;
+
+    if (m_reply->error() != QNetworkReply::NoError) {
+        emit installFinished(false, "Download failed: " + m_reply->errorString());
+        m_reply->deleteLater(); m_reply = nullptr;
+        return;
+    }
+
+    m_reply->deleteLater(); m_reply = nullptr;
+    emit progressPercent(100);
+    if (m_downloadCallback) m_downloadCallback();
+}
+
+void InstallerWorker::runInstallerJar(const QString &jarPath,
+                                        const QStringList &extraArgs,
+                                        std::function<void(bool)> onFinished)
+{
+    m_processCallback = onFinished;
+    QString java = m_cfg.javaPath.isEmpty() ? "java" : m_cfg.javaPath;
+    QStringList args;
+    args << "-jar" << jarPath << extraArgs;
+
+    emit progressMessage("Running: " + java + " " + args.join(' '));
+    emit progressPercent(-1);
+
+    m_process = new QProcess(this);
+    m_process->setProcessChannelMode(QProcess::MergedChannels);
+    hideProcessWindow(m_process);
+
+    connect(m_process, &QProcess::readyReadStandardOutput,
+            this, &InstallerWorker::onProcessOutput);
+    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &InstallerWorker::onProcessFinished);
+
+    m_process->start(java, args);
+}
+
+void InstallerWorker::onProcessOutput()
+{
+    QString out = QString::fromUtf8(m_process->readAllStandardOutput()).trimmed();
+    if (!out.isEmpty()) emit progressMessage(out);
+}
+
+void InstallerWorker::onProcessFinished(int exitCode, QProcess::ExitStatus status)
+{
+    m_process->deleteLater(); m_process = nullptr;
+    bool ok = (exitCode == 0 && status == QProcess::NormalExit);
+    if (m_processCallback) m_processCallback(ok);
+}
+
+// ─────────────────────── Vanilla Server ────────────────────────────────────
+
+QString InstallerWorker::resolveVanillaServerUrl() const
+{
+    QFile f(QCoreApplication::applicationDirPath() + "/version/MojangData.json");
+    if (!f.open(QIODevice::ReadOnly)) return {};
+    QJsonArray versions = QJsonDocument::fromJson(f.readAll()).object()["versions"].toArray();
+    for (const QJsonValue &v : versions) {
+        QJsonObject o = v.toObject();
+        if (o["id"].toString() == m_cfg.version.mcVersion)
+            return o["url"].toString();
+    }
+    return {};
+}
+
+void InstallerWorker::installVanillaServer()
+{
+    emit progressStage(1, 2);
+    emit progressMessage("Resolving Vanilla server for " + m_cfg.version.mcVersion + "...");
+
+    QString manifestUrl = resolveVanillaServerUrl();
+    if (manifestUrl.isEmpty()) {
+        emit installFinished(false, "Version not found in manifest. Fetch versions first.");
+        return;
+    }
+
+    QString tmpManifest = m_cfg.installDir + "/version_info.json";
+
+    startDownload(QUrl(manifestUrl), tmpManifest, [this, tmpManifest]() {
+        QFile f(tmpManifest);
+        if (!f.open(QIODevice::ReadOnly)) {
+            emit installFinished(false, "Cannot read version info JSON.");
+            return;
+        }
+        QJsonObject downloads = QJsonDocument::fromJson(f.readAll())
+                                    .object()["downloads"].toObject();
+        f.close();
+        QFile::remove(tmpManifest);
+
+        QString serverUrl = downloads["server"].toObject()["url"].toString();
+        if (serverUrl.isEmpty()) {
+            emit installFinished(false, "No server download for this Minecraft version.");
+            return;
+        }
+
+        emit progressStage(2, 2);
+        QString jarName = "minecraft_server." + m_cfg.version.mcVersion + ".jar";
+        QString dest    = m_cfg.installDir + "/" + jarName;
+
+        startDownload(QUrl(serverUrl), dest, [this, dest, jarName]() {
+            emit progressMessage("Server jar downloaded.");
+            createStartScript(m_cfg.installDir, jarName, m_cfg.useNogui);
+            emit installFinished(true,
+                QString("Vanilla server %1 installed!\n\nLaunch: start_server.%2")
+                    .arg(m_cfg.version.mcVersion)
+#ifdef Q_OS_WIN
+                    .arg("bat"));
+#else
+                    .arg("sh"));
+#endif
+        });
+    });
+}
+
+// ─────────────────────────── Fabric ───────────────────────────────────────
+
+void InstallerWorker::installFabric()
+{
+    emit progressStage(1, 2);
+    QString installerUrl = "https://maven.fabricmc.net/net/fabricmc/fabric-installer/1.0.1/"
+                           "fabric-installer-1.0.1.jar";
+    QString jarPath = m_cfg.installDir + "/fabric-installer.jar";
+
+    emit progressMessage("Downloading Fabric installer...");
+    startDownload(QUrl(installerUrl), jarPath, [this, jarPath]() {
+        emit progressStage(2, 2);
+
+        bool doClient = (m_cfg.target != InstallTarget::Server);
+        bool doServer = (m_cfg.target != InstallTarget::Client);
+
+        auto finish = [this, jarPath, doServer](bool ok) {
+            QFile::remove(jarPath);
+            if (!ok) { emit installFinished(false, "Fabric installer failed."); return; }
+            if (doServer)
+                createStartScript(m_cfg.installDir, "fabric-server-launch.jar", m_cfg.useNogui);
+            emit installFinished(true, "Fabric installed successfully!");
+        };
+
+        if (doClient) {
+            QStringList cArgs = {"client", "-dir", m_cfg.installDir,
+                                  "-mcversion", m_cfg.version.mcVersion,
+                                  "-loader", m_cfg.version.loaderVersion};
+            if (!m_cfg.createProfile) cArgs << "-noprofile";
+
+            if (doServer) {
+                runInstallerJar(jarPath, cArgs, [this, jarPath, finish](bool ok) {
+                    if (!ok) { finish(false); return; }
+                    runInstallerJar(jarPath,
+                        {"server", "-dir", m_cfg.installDir,
+                         "-mcversion", m_cfg.version.mcVersion,
+                         "-loader", m_cfg.version.loaderVersion,
+                         "-downloadMinecraft"}, finish);
+                });
+            } else {
+                runInstallerJar(jarPath, cArgs, finish);
+            }
+        } else {
+            runInstallerJar(jarPath,
+                {"server", "-dir", m_cfg.installDir,
+                 "-mcversion", m_cfg.version.mcVersion,
+                 "-loader", m_cfg.version.loaderVersion,
+                 "-downloadMinecraft"}, finish);
+        }
+    });
+}
+
+// ─────────────────────────── Quilt ────────────────────────────────────────
+
+void InstallerWorker::installQuilt()
+{
+    emit progressStage(1, 2);
+    QString installerUrl = "https://quiltmc.org/api/v1/download-latest-installer/java-universal";
+    QString jarPath = m_cfg.installDir + "/quilt-installer.jar";
+
+    emit progressMessage("Downloading Quilt installer...");
+    startDownload(QUrl(installerUrl), jarPath, [this, jarPath]() {
+        emit progressStage(2, 2);
+
+        bool doClient = (m_cfg.target != InstallTarget::Server);
+        bool doServer = (m_cfg.target != InstallTarget::Client);
+
+        auto finish = [this, jarPath, doServer](bool ok) {
+            QFile::remove(jarPath);
+            if (!ok) { emit installFinished(false, "Quilt installer failed."); return; }
+            if (doServer)
+                createStartScript(m_cfg.installDir, "quilt-server-launch.jar", m_cfg.useNogui);
+            emit installFinished(true, "Quilt installed successfully!");
+        };
+
+        if (doClient) {
+            QStringList cArgs = {"install", "client",
+                                  m_cfg.version.mcVersion, m_cfg.version.loaderVersion,
+                                  "--install-dir=" + m_cfg.installDir};
+            if (doServer) {
+                runInstallerJar(jarPath, cArgs, [this, jarPath, finish](bool ok) {
+                    if (!ok) { finish(false); return; }
+                    runInstallerJar(jarPath,
+                        {"install", "server",
+                         m_cfg.version.mcVersion, m_cfg.version.loaderVersion,
+                         "--install-dir=" + m_cfg.installDir,
+                         "--download-server"}, finish);
+                });
+            } else {
+                runInstallerJar(jarPath, cArgs, finish);
+            }
+        } else {
+            runInstallerJar(jarPath,
+                {"install", "server",
+                 m_cfg.version.mcVersion, m_cfg.version.loaderVersion,
+                 "--install-dir=" + m_cfg.installDir,
+                 "--download-server"}, finish);
+        }
+    });
+}
+
+// ─────────────────────────── Forge ────────────────────────────────────────
+
+void InstallerWorker::installForge()
+{
+    emit progressStage(1, 3);
+    QString ver     = m_cfg.version.mcVersion + "-" + m_cfg.version.loaderVersion;
+    QString url     = QString("https://maven.minecraftforge.net/net/minecraftforge/"
+                              "forge/%1/forge-%1-installer.jar").arg(ver);
+    QString jarPath = m_cfg.installDir + "/forge-installer.jar";
+
+    emit progressMessage("Downloading Forge installer for " + ver + "...");
+    startDownload(QUrl(url), jarPath, [this, jarPath]() {
+        emit progressStage(2, 3);
+
+        // Forge requires launcher_profiles.json to exist for client install
+        ensureLauncherProfile(m_cfg.installDir);
+
+        emit progressStage(3, 3);
+        bool doClient = (m_cfg.target != InstallTarget::Server);
+        bool doServer = (m_cfg.target != InstallTarget::Client);
+
+        auto finish = [this, jarPath, doServer](bool ok) {
+            QFile::remove(jarPath);
+            if (!ok) { emit installFinished(false, "Forge installer failed."); return; }
+            if (doServer)
+                createStartScript(m_cfg.installDir, "forge-server.jar", m_cfg.useNogui);
+            emit installFinished(true, "Forge installed successfully!");
+        };
+
+        if (doClient) {
+            if (doServer) {
+                runInstallerJar(jarPath, {"--installClient", m_cfg.installDir},
+                    [this, jarPath, finish](bool ok) {
+                        if (!ok) { finish(false); return; }
+                        runInstallerJar(jarPath, {"--installServer", m_cfg.installDir}, finish);
+                    });
+            } else {
+                runInstallerJar(jarPath, {"--installClient", m_cfg.installDir}, finish);
+            }
+        } else {
+            runInstallerJar(jarPath, {"--installServer", m_cfg.installDir}, finish);
+        }
+    });
+}
+
+// ─────────────────────────── NeoForge ─────────────────────────────────────
+
+void InstallerWorker::installNeoForge()
+{
+    emit progressStage(1, 3);
+    QString ver     = m_cfg.version.loaderVersion;
+    QString url     = QString("https://maven.neoforged.net/releases/net/neoforged/"
+                              "neoforge/%1/neoforge-%1-installer.jar").arg(ver);
+    QString jarPath = m_cfg.installDir + "/neoforge-installer.jar";
+
+    emit progressMessage("Downloading NeoForge installer " + ver + "...");
+    startDownload(QUrl(url), jarPath, [this, jarPath]() {
+        emit progressStage(2, 3);
+
+        ensureLauncherProfile(m_cfg.installDir);
+
+        emit progressStage(3, 3);
+        bool doClient = (m_cfg.target != InstallTarget::Server);
+        bool doServer = (m_cfg.target != InstallTarget::Client);
+
+        auto finish = [this, jarPath, doServer](bool ok) {
+            QFile::remove(jarPath);
+            if (!ok) { emit installFinished(false, "NeoForge installer failed."); return; }
+            if (doServer)
+                createStartScript(m_cfg.installDir, "neoforge-server.jar", m_cfg.useNogui);
+            emit installFinished(true, "NeoForge installed successfully!");
+        };
+
+        if (doClient) {
+            if (doServer) {
+                runInstallerJar(jarPath, {"--installClient", m_cfg.installDir},
+                    [this, jarPath, finish](bool ok) {
+                        if (!ok) { finish(false); return; }
+                        runInstallerJar(jarPath, {"--installServer", m_cfg.installDir}, finish);
+                    });
+            } else {
+                runInstallerJar(jarPath, {"--installClient", m_cfg.installDir}, finish);
+            }
+        } else {
+            runInstallerJar(jarPath, {"--installServer", m_cfg.installDir}, finish);
+        }
+    });
+}
+
+// ─────────────────────────── OptiFine ─────────────────────────────────────
+
+void InstallerWorker::installOptiFine()
+{
+    // Step 1: Read cached version info
+    QString versionFile = QCoreApplication::applicationDirPath() + "/version/OptiFineVersion.json";
+    QFile f(versionFile);
+    if (!f.open(QIODevice::ReadOnly)) {
+        emit installFinished(false, "OptiFineVersion.json not found. Fetch versions first.");
+        return;
+    }
+
+    QJsonArray arr = QJsonDocument::fromJson(f.readAll()).object()["versions"].toArray();
+    f.close();
+
+    QString jarFile;
+    for (const QJsonValue &v : arr) {
+        QJsonObject o = v.toObject();
+        if (o["minecraft"].toString() == m_cfg.version.mcVersion &&
+            o["optifine"].toString()  == m_cfg.version.loaderVersion)
+        {
+            jarFile = o["file"].toString();
+            break;
+        }
+    }
+
+    if (jarFile.isEmpty()) {
+        emit installFinished(false, "OptiFine version not found in cache.");
+        return;
+    }
+
+    QString optiScript = QCoreApplication::applicationDirPath() + "/OptiToken.py";
+    if (!QFile::exists(optiScript))
+        optiScript = QDir::currentPath() + "/OptiToken.py";
+    if (!QFile::exists(optiScript)) {
+        emit installFinished(false, "OptiToken.py not found next to the executable.");
+        return;
+    }
+
+    QString dest = m_cfg.installDir + "/" + jarFile;
+
+    // Steps 1+2 done by Python (token fetch + download with full session/cookies)
+    emit progressStage(1, 3);
+    emit progressMessage("[1/2] Starting Python download (token + JAR)...");
+    emit progressPercent(-1);
+
+    QProcess *dlProc = new QProcess(this);
+    dlProc->setProcessChannelMode(QProcess::SeparateChannels);
+    hideProcessWindow(dlProc);
+
+    // Stream stdout line-by-line for progress
+    connect(dlProc, &QProcess::readyReadStandardOutput,
+            this, [this, dlProc, jarFile]() {
+        while (dlProc->canReadLine()) {
+            QString line = QString::fromUtf8(dlProc->readLine()).trimmed();
+            if (line.startsWith("PROGRESS:")) {
+                bool ok;
+                int pct = line.mid(9).toInt(&ok);
+                if (ok) {
+                    emit progressStage(2, 3);
+                    emit progressPercent(pct);
+                    emit progressMessage(QString("[2/3] Downloading OptiFine: %1%").arg(pct));
+                }
+            } else if (line.startsWith("DONE:")) {
+                emit progressMessage(QString("Downloaded %1 (%2 MB)").arg(jarFile, line.mid(5)));
+            } else if (!line.isEmpty()) {
+                emit progressMessage(line);
+            }
+        }
+    });
+
+    connect(dlProc, &QProcess::readyReadStandardError,
+            this, [this, dlProc]() {
+        QString err = QString::fromUtf8(dlProc->readAllStandardError()).trimmed();
+        if (!err.isEmpty()) emit progressMessage("[Python] " + err);
+    });
+
+    connect(dlProc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [this, dlProc, dest, jarFile](int exitCode, QProcess::ExitStatus) {
+        dlProc->deleteLater();
+
+        if (exitCode != 0) {
+            emit installFinished(false, "OptiToken.py download failed (exit " +
+                                 QString::number(exitCode) + ").");
+            return;
+        }
+
+        qint64 fileSize = QFile(dest).size();
+        if (fileSize < 100 * 1024) {
+            QFile::remove(dest);
+            emit installFinished(false,
+                QString("Downloaded file is too small (%1 bytes) — likely an error page.")
+                    .arg(fileSize));
+            return;
+        }
+
+        emit progressStage(3, 3);
+        emit progressPercent(100);
+        emit progressMessage("[3/3] Launching OptiFine installer...");
+
+        runInstallerJar(dest, {}, [this, dest](bool ok) {
+            QFile::remove(dest);
+            emit installFinished(true,
+                ok ? "OptiFine installed successfully!"
+                   : "OptiFine JAR downloaded. Run it manually if the installer didn't open.");
+        });
+    });
+
+#ifdef Q_OS_WIN
+    dlProc->start("python", {optiScript, jarFile, dest});
+#else
+    dlProc->start("python3", {optiScript, jarFile, dest});
+#endif
+}
