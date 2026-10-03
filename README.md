@@ -1,11 +1,8 @@
 # Minecraft Modloader Installer
 
-A Qt 6 C++ desktop application for installing Minecraft modloaders
-(Vanilla server, Fabric, Quilt, Forge, NeoForge, OptiFine).
+A Qt 6 desktop application (C++17) that installs Minecraft modloaders and Vanilla server files.
 
----
-
-## Features
+Supported targets:
 
 | Modloader | Client | Server |
 |-----------|:------:|:------:|
@@ -16,115 +13,102 @@ A Qt 6 C++ desktop application for installing Minecraft modloaders
 | NeoForge  |   ✓    |   ✓    |
 | OptiFine  |   ✓    |   –    |
 
-- Version data fetched via **Python** (`requestVer.py`) — no hard-coded URLs in C++
-- Installer runs official installer JARs via Java subprocess
-- Real-time progress log with cancel support
-- Configurable Java path, install directory, launcher profile creation
+## Features
 
----
+- GUI workflow for fetching available versions and running installer steps
+- Support for Client / Server / Both targets where supported
+- Configurable Java executable path and install directory
+- Optional Minecraft Launcher profile creation for client installs
+- Server startup script generation with optional `nogui`
+- Real-time install logs and progress updates
 
-## Prerequisites
+## Requirements
 
-| Tool    | Minimum version |
-|---------|-----------------|
-| Qt      | 6.2             |
-| CMake   | 3.16            |
-| C++     | 17              |
-| Python  | 3.9+  (`requests` library) |
-| Java    | 17+  (for running installer JARs) |
+- CMake 3.16+
+- C++17 compiler
+- Qt 6.2+ (`Core`, `Gui`, `Widgets`, `Network`, `Concurrent`)
+- Python 3 with the `requests` package
+- Java 17+ (used to run official installer JARs)
+- Internet access (version metadata and installer downloads)
 
-Install Python `requests`:
+Install Python dependency:
+
 ```bash
 pip install requests
 ```
 
----
-
 ## Build
 
+From the repository root:
+
 ```bash
-# Clone / extract project
-cd MCModloaderInstaller
-
-# Configure
 cmake -B build -DCMAKE_BUILD_TYPE=Release
-
-# Build
 cmake --build build --parallel
-
-# Run
-./build/MCModloaderInstaller        # Linux/macOS
-build\Release\MCModloaderInstaller.exe   # Windows
 ```
 
-### Qt location hint (if Qt not on PATH)
+Run:
+
+```bash
+./build/MCModloaderInstaller                 # Linux/macOS
+build\\Release\\MCModloaderInstaller.exe      # Windows (typical multi-config layout)
+```
+
+If Qt is not on your default search path, provide `CMAKE_PREFIX_PATH`:
 
 ```bash
 cmake -B build \
-  -DCMAKE_PREFIX_PATH=/path/to/Qt/6.x.x/gcc_64 \
+  -DCMAKE_PREFIX_PATH=/path/to/Qt/6.x.x/<toolchain> \
   -DCMAKE_BUILD_TYPE=Release
 ```
 
----
+## Usage
 
-## Project Layout
+1. Start the application.
+2. Select a modloader from the sidebar.
+3. Click **Fetch Versions**.
+4. Choose version and install target options.
+5. Click **Install** and monitor progress.
 
-```
-MCModloaderInstaller/
+## How version data is fetched
+
+The app runs `python/requestVer.py`, which writes metadata into a `version/` directory, including:
+
+- `MojangData.json`
+- `FabricGame.json`
+- `FabricLoader.json`
+- `QuiltGame.json`
+- `QuiltLoader.json`
+- `ForgeMaven.xml`
+- `ForgePromotion.json`
+- `NeoForgeMaven.xml`
+- `OptiFineVersion.json`
+
+`InstallerWorker` then uses the selected version data to download/run the appropriate installer workflow.
+
+## Project structure
+
+```text
+.
 ├── CMakeLists.txt
 ├── python/
-│   └── requestVer.py          ← version fetcher (copied next to executable)
+│   ├── requestVer.py
+│   └── OptiToken.py
 ├── resources/
 │   └── resources.qrc
 └── src/
     ├── main.cpp
-    ├── MainWindow.{h,cpp}     ← top-level window, wires everything together
-    ├── SidebarWidget.{h,cpp}  ← left nav with modloader buttons
-    ├── InstallerPage.{h,cpp}  ← right panel: version picker + install options
-    ├── ProgressDialog.{h,cpp} ← modal log + progress bar during install
-    ├── VersionFetcher.{h,cpp} ← runs requestVer.py, parses JSON/XML output
-    ├── InstallerWorker.{h,cpp}← downloads & runs installer JARs
-    ├── ModloaderInfo.h        ← enums + data structs (no .cpp needed)
-    └── VersionParser.{h,cpp}  ← (reserved for future XML/JSON helpers)
+    ├── MainWindow.{h,cpp}
+    ├── SidebarWidget.{h,cpp}
+    ├── InstallerPage.{h,cpp}
+    ├── VersionFetcher.{h,cpp}
+    ├── InstallerWorker.{h,cpp}
+    ├── ProgressDialog.{h,cpp}
+    ├── NoguiDialog.{h,cpp}
+    ├── VersionParser.{h,cpp}
+    └── ModloaderInfo.h
 ```
-
----
-
-## How It Works
-
-### Version Fetching
-1. User clicks **Fetch Versions**.
-2. `VersionFetcher` spawns `python3 requestVer.py` as a `QProcess`.
-3. Python downloads 7 data files into `./version/`.
-4. After Python exits, C++ parses each file:
-   - `MojangData.json`    → Vanilla version list
-   - `FabricMeta.json`    → Fabric loader versions
-   - `QuiltMeta.json`     → Quilt loader versions
-   - `ForgeMaven.xml`     → Forge version list
-   - `ForgePromotion.json`→ Forge recommended/latest flags
-   - `NeoForgeMaven.xml`  → NeoForge version list
-   - `OptiFineVersion.json`→ OptiFine scraped versions
-
-### Installation
-Each loader follows a common pattern inside `InstallerWorker`:
-
-1. **Download** the official installer JAR via `QNetworkAccessManager`.
-2. **Run** `java -jar <installer>.jar <args>` via `QProcess`.
-3. **Emit** progress signals → `ProgressDialog` shows log lines + progress bar.
-
-Vanilla server skips the JAR step: it resolves the direct download URL
-from the Mojang version manifest and saves the server `.jar` directly.
-
----
-
-## Adding Loader Icons
-
-Place 64×64 PNG icons in `resources/icons/` and uncomment the lines
-in `resources/resources.qrc`. The icon path in `ModloaderInfo.h` is
-already set to `:/icons/<name>.png`.
-
----
 
 ## License
 
-MIT — do whatever you want.
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+See [`LICENSE`](./LICENSE) for the full text.
